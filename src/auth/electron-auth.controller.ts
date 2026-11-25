@@ -59,7 +59,7 @@ export class ElectronAuthController {
     private readonly credentialsService: CredentialsService,
     private readonly entitlementService: EntitlementService
   ) {
-    this.authApiUrl = process.env.AUTH_API_URL || 'http://local-api-auth-1:3000';
+    this.authApiUrl = (process.env.AUTH_API_URL || 'http://local-api-auth-1:3000').replace(/\/+$/, '');
   }
 
   @Post(['api/auth/login/auric', 'auth/login/auric'])

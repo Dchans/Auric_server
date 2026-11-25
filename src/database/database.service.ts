@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { ClientConfig, Pool, PoolClient, PoolConfig, QueryResult, QueryResultRow } from 'pg';
 import {
   ActiveSubscriptionDto,
   ApprovedDeviceResult,
@@ -11,21 +11,67 @@ import {
   SubscriptionPlanDto,
 } from '../schema';
 
+export function buildAuricPgConfig(
+  overrides: Partial<PoolConfig & ClientConfig> = {},
+  preferMigrationEnv = false,
+): PoolConfig & ClientConfig {
+  const connectionString = preferMigrationEnv
+    ? process.env.MIGRATION_DATABASE_URL || process.env.AURIC_DATABASE_URL || process.env.DATABASE_URL
+    : process.env.AURIC_DATABASE_URL || process.env.DATABASE_URL;
+  const sslEnabled =
+    process.env.DATABASE_SSL === 'true' ||
+    process.env.PGSSLMODE === 'require' ||
+    process.env.PGSSLMODE === 'verify-full';
+
+  const base: PoolConfig & ClientConfig = connectionString
+    ? { connectionString }
+    : {
+        host:
+          (preferMigrationEnv ? process.env.MIGRATION_PG_HOST : undefined) ||
+          process.env.AURIC_PG_HOST ||
+          process.env.PGHOST ||
+          '127.0.0.1',
+        port: Number(
+          (preferMigrationEnv ? process.env.MIGRATION_PG_PORT : undefined) ||
+            process.env.AURIC_PG_PORT ||
+            process.env.PGPORT ||
+            5432,
+        ),
+        user:
+          (preferMigrationEnv ? process.env.MIGRATION_PG_USER : undefined) ||
+          process.env.AURIC_PG_USER ||
+          process.env.PGUSER ||
+          'app',
+        password:
+          (preferMigrationEnv ? process.env.MIGRATION_PG_PASSWORD : undefined) ||
+          process.env.AURIC_PG_PASSWORD ||
+          process.env.PGPASSWORD,
+        database:
+          (preferMigrationEnv ? process.env.MIGRATION_PG_DATABASE : undefined) ||
+          process.env.AURIC_PG_DATABASE ||
+          process.env.PGDATABASE ||
+          'app',
+      };
+
+  return {
+    ...base,
+    ...(sslEnabled ? { ssl: { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true' } } : {}),
+    ...overrides,
+  };
+}
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly pool: Pool;
 
   constructor() {
-    this.pool = new Pool({
-      host: process.env.AURIC_PG_HOST || process.env.PGHOST,
-      port: Number(process.env.AURIC_PG_PORT || process.env.PGPORT || 5432),
-      user: process.env.AURIC_PG_USER || process.env.PGUSER,
-      password: process.env.AURIC_PG_PASSWORD || process.env.PGPASSWORD,
-      database: process.env.AURIC_PG_DATABASE || process.env.PGDATABASE || 'app',
-      connectionTimeoutMillis: 2000,
-      query_timeout: 2000,
-      application_name: 'auric',
-    });
+    this.pool = new Pool(
+      buildAuricPgConfig({
+        connectionTimeoutMillis: 2000,
+        query_timeout: 2000,
+        application_name: 'auric',
+      }),
+    );
 
     this.pool.on('error', (error) => {
       console.error('[Auric Database] Idle PostgreSQL connection error:', error.message);

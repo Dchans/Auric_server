@@ -15,4 +15,6 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/keys ./keys
 USER node
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+HEALTHCHECK --interval=15s --timeout=4s --start-period=30s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+CMD ["node", "dist/start.js"]

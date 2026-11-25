@@ -679,6 +679,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON auric.auric_credentials TO auric_app;
 `,
 } as const;
 
+export const auricControlCenterGrantsSchema = {
+  id: '012_auric_control_center_grants',
+  sql: `
+GRANT INSERT, UPDATE ON auric.subscription_plans TO auric_app;
+`,
+} as const;
+
 export const AURIC_MIGRATIONS = [
   auricSchema,
   auricEntitlementsSchema,
@@ -691,5 +698,6 @@ export const AURIC_MIGRATIONS = [
   auricAppVersionsSchema,
   auricCredentialsPermissionsSchema,
   auricSupportSchema,
+  auricControlCenterGrantsSchema,
 ];
 

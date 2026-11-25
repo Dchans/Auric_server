@@ -19,7 +19,7 @@ export class RemoteAuthController {
     const name=body.browser_device_name??body.device_name??'Browser remote client';
     if(typeof name!=='string'||name.length>200||/[\x00-\x1f]/.test(name))throw new BadRequestException('Provide a valid browser device name.');
     await this.database.rateLimit('auric_remote_login_ip',req.ip??'local',30,900);
-    const authUrl=process.env.AUTH_API_URL||'http://local-api-auth-1:3000';
+    const authUrl=(process.env.AUTH_API_URL||'http://local-api-auth-1:3000').replace(/\/+$/,'');
     let result:Response;
     try{result=await fetch(`${authUrl}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier:body.username.trim(),password:body.password}),signal:AbortSignal.timeout(10000),redirect:'error'});}catch{throw new ServiceUnavailableException('Authentication service is temporarily unavailable.');}
     const auth=await result.json().catch(()=>null) as any;
