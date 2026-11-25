@@ -1,0 +1,27 @@
+name: auric
+
+services:
+  auric:
+    build: .
+    ports:
+      - "127.0.0.1:${AURIC_PORT:-3001}:3000"
+    environment:
+      PGHOST: db
+      PGDATABASE: "${AURIC_PG_DATABASE:-app}"
+      PGUSER: auric_app
+      PGPASSWORD: "${AURIC_PG_PASSWORD:?Set the auric_app password in .env}"
+      AURIC_CREDENTIALS_MASTER_KEY: "${AURIC_CREDENTIALS_MASTER_KEY:-6gLUllbLXb8mrblOZHssbWYihZdTHt_TBT5TB84ozM8=}"
+      AUTH_API_URL: "${AUTH_API_URL:-http://local-api-auth-1:3000}"
+    networks:
+      - default
+      - auth-db
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  auth-db:
+    external: true
+    name: local-api_default
