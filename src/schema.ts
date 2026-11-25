@@ -686,6 +686,13 @@ GRANT INSERT, UPDATE ON auric.subscription_plans TO auric_app;
 `,
 } as const;
 
+export const auricDevicePublicKeySchema = {
+  id: '013_auric_device_public_key',
+  sql: `
+ALTER TABLE auric.devices ADD COLUMN IF NOT EXISTS public_key text;
+`,
+} as const;
+
 export const AURIC_MIGRATIONS = [
   auricSchema,
   auricEntitlementsSchema,
@@ -699,5 +706,6 @@ export const AURIC_MIGRATIONS = [
   auricCredentialsPermissionsSchema,
   auricSupportSchema,
   auricControlCenterGrantsSchema,
+  auricDevicePublicKeySchema,
 ];
 
