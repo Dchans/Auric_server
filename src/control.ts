@@ -18,9 +18,17 @@ export class ControlController {
     private readonly credentials: CredentialsService,
     private readonly entitlement: EntitlementService
   ) {}
+  @Get('credentials')
+  listCredentials(@Query() q:Record<string,string>) {
+    return this.credentials.listCredentials(page(q));
+  }
   @Get('shops/:userId/credentials')
   getCredentials(@Param('userId') userId:string) {
     return this.credentials.getCredentialStatus(uuid(userId));
+  }
+  @Post('shops/:userId/credentials/generate')
+  generateMissingCredentials(@Param('userId') userId:string) {
+    return this.credentials.generateMissingCredentials(uuid(userId));
   }
   @Put('shops/:userId/credentials/:type')
   resetCredential(@Param('userId') userId:string,@Param('type') type:string,@Body() body:unknown) {
@@ -55,8 +63,11 @@ export class ControlController {
     const b=object(raw),userId=uuid(b.userId),name=text(b.shopName,'shop name',200),location=text(b.shopLocation,'shop location',500);
     const gstin=b.gstin ? text(b.gstin,'GSTIN',15).toUpperCase():null;
     if (gstin && !/^[A-Z0-9]{15}$/.test(gstin)) throw new BadRequestException('GSTIN must have 15 letters or digits.');
-    const {rows:[row]}=await this.db.query(`INSERT INTO auric.shop_profiles(user_id,shop_name,shop_location,gstin) VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET shop_name=$2,shop_location=$3,gstin=$4,updated_at=now() RETURNING user_id AS id`,[userId,name,location,gstin]);
-    return row;
+    return this.db.transaction(async client=>{
+      const {rows:[row]}=await client.query(`INSERT INTO auric.shop_profiles(user_id,shop_name,shop_location,gstin) VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET shop_name=$2,shop_location=$3,gstin=$4,updated_at=now() RETURNING user_id AS id`,[userId,name,location,gstin]);
+      await this.credentials.ensureCredentials(userId,client);
+      return row;
+    });
   }
   @Get('plans')
   plans(@Query() q:Record<string,string>) {

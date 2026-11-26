@@ -5,9 +5,25 @@ import { DatabaseService } from '../database/database.service';
 
 export type CredentialType = 'db_password' | 'file_password';
 
+const CREDENTIAL_TYPES: readonly CredentialType[] = ['db_password', 'file_password'];
+const SECRET_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
 export interface DecryptedCredentials {
   dbPassword?: string;
   filePassword?: string;
+}
+
+export interface CredentialListRow {
+  id: string;
+  userId: string;
+  email: string;
+  username: string | null;
+  shopName: string;
+  shopLocation: string;
+  dbPasswordConfigured: boolean;
+  dbPasswordUpdatedAt: Date | null;
+  filePasswordConfigured: boolean;
+  filePasswordUpdatedAt: Date | null;
 }
 
 @Injectable()
@@ -25,6 +41,14 @@ export class CredentialsService {
     this.derivedKey = Buffer.from(
       crypto.hkdfSync('sha256', rawKey, '', 'auric-credentials-v1', 32)
     );
+  }
+
+  generateRandomSecret(length = 32): string {
+    let out = '';
+    for (let i = 0; i < length; i++) {
+      out += SECRET_ALPHABET[crypto.randomInt(SECRET_ALPHABET.length)];
+    }
+    return out;
   }
 
   encrypt(plainText: string): { ciphertext: Buffer; nonce: Buffer; authTag: Buffer; keyId: string } {
@@ -113,5 +137,86 @@ export class CredentialsService {
        SET ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, auth_tag = EXCLUDED.auth_tag, key_id = EXCLUDED.key_id, updated_at = now()`,
       [userId, credentialType, enc.ciphertext, enc.nonce, enc.authTag, enc.keyId]
     );
+  }
+
+  async saveCredentialIfMissing(userId: string, credentialType: CredentialType, plaintext: string, client?: PoolClient): Promise<boolean> {
+    const enc = this.encrypt(plaintext);
+    const executor: { query(sql: string, values: unknown[]): Promise<{ rowCount: number | null }> } = client ?? this.database;
+    const result = await executor.query(
+      `INSERT INTO auric.auric_credentials (user_id, credential_type, ciphertext, nonce, auth_tag, key_id, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (user_id, credential_type) DO NOTHING`,
+      [userId, credentialType, enc.ciphertext, enc.nonce, enc.authTag, enc.keyId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async ensureCredentials(userId: string, client?: PoolClient): Promise<{ created: CredentialType[] }> {
+    const executor: { query(sql: string, values: unknown[]): Promise<{ rows: Array<{ credential_type: CredentialType }>; rowCount: number | null }> } =
+      client ?? this.database;
+    const { rows } = await executor.query(
+      'SELECT credential_type FROM auric.auric_credentials WHERE user_id = $1',
+      [userId]
+    );
+    const existing = new Set(rows.map(r => r.credential_type));
+    const created: CredentialType[] = [];
+    for (const type of CREDENTIAL_TYPES) {
+      if (existing.has(type)) continue;
+      const inserted = await this.saveCredentialIfMissing(userId, type, this.generateRandomSecret(32), client);
+      if (inserted) created.push(type);
+    }
+    return { created };
+  }
+
+  async generateMissingCredentials(userId: string) {
+    return this.database.transaction(async client => {
+      const { rowCount } = await client.query('SELECT user_id FROM auric.shop_profiles WHERE user_id=$1 FOR UPDATE', [userId]);
+      if (!rowCount) throw new NotFoundException('Create a shop profile before managing Auric credentials.');
+      const { created } = await this.ensureCredentials(userId, client);
+      const { rows } = await client.query<{ credential_type: CredentialType; updated_at: Date }>(
+        'SELECT credential_type, updated_at FROM auric.auric_credentials WHERE user_id=$1',
+        [userId]
+      );
+      return {
+        userId,
+        created,
+        credentials: CREDENTIAL_TYPES.map(type => {
+          const row = rows.find(r => r.credential_type === type);
+          return { type, configured: !!row, updatedAt: row?.updated_at ?? null };
+        }),
+      };
+    });
+  }
+
+  async listCredentials(p: { limit: number; offset: number; search: string; userId: string | null }) {
+    const from = `FROM auric.shop_profiles s
+      JOIN auth.users u ON u.id = s.user_id
+      LEFT JOIN auric.auric_credentials db ON db.user_id = s.user_id AND db.credential_type = 'db_password'
+      LEFT JOIN auric.auric_credentials fp ON fp.user_id = s.user_id AND fp.credential_type = 'file_password'`;
+    const where = `WHERE (s.shop_name ILIKE $1 OR u.email ILIKE $1 OR COALESCE(u.username, '') ILIKE $1 OR s.shop_location ILIKE $1)
+      AND ($2::uuid IS NULL OR s.user_id = $2)`;
+    const args = [p.search, p.userId];
+    const { rows } = await this.database.query<CredentialListRow>(
+      `SELECT
+        s.user_id AS id,
+        s.user_id AS "userId",
+        u.email,
+        u.username,
+        s.shop_name AS "shopName",
+        s.shop_location AS "shopLocation",
+        (db.user_id IS NOT NULL) AS "dbPasswordConfigured",
+        db.updated_at AS "dbPasswordUpdatedAt",
+        (fp.user_id IS NOT NULL) AS "filePasswordConfigured",
+        fp.updated_at AS "filePasswordUpdatedAt"
+      ${from} ${where}
+      ORDER BY s.created_at DESC, s.user_id
+      LIMIT $3 OFFSET $4`,
+      [...args, p.limit, p.offset]
+    );
+    const { rows: [count] } = await this.database.query<{ total: number }>(
+      `SELECT count(*)::int AS total ${from} ${where}`,
+      args
+    );
+    return { rows, total: count.total };
   }
 }

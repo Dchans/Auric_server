@@ -212,7 +212,22 @@ export class ElectronAuthController {
 
     // Only approved PRIMARY devices receive decrypted SQLite encryption keys
     if (isPrimary) {
-      const credentials = await this.credentialsService.getDecryptedCredentials(authUser.id);
+      let credentials = await this.credentialsService.getDecryptedCredentials(authUser.id);
+      if (!credentials.dbPassword || !credentials.filePassword) {
+        const fallbackShopName = (shopProfile?.shopName || authUser.username || authUser.email || 'Auric Shop')
+          .trim()
+          .slice(0, 200);
+        await this.database.transaction(async client => {
+          await client.query(
+            `INSERT INTO auric.shop_profiles (user_id, shop_name, shop_location, gstin)
+             VALUES ($1, $2, $3, NULL)
+             ON CONFLICT (user_id) DO NOTHING`,
+            [authUser.id, fallbackShopName, 'Not set']
+          );
+          await this.credentialsService.ensureCredentials(authUser.id, client);
+        });
+        credentials = await this.credentialsService.getDecryptedCredentials(authUser.id);
+      }
       dbPassword = credentials.dbPassword || '';
       fileKey = credentials.filePassword || '';
       this.logger.log(`Approved primary device ${device.id} logged in for user ${authUser.username}`);
