@@ -693,6 +693,74 @@ ALTER TABLE auric.devices ADD COLUMN IF NOT EXISTS public_key text;
 `,
 } as const;
 
+export const auricFormatTemplatesSchema = {
+  id: '014_auric_format_templates',
+  sql: `
+CREATE TABLE IF NOT EXISTS auric.format_templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  format_id text NOT NULL UNIQUE CHECK (length(format_id) BETWEEN 1 AND 200),
+  folder_name text NOT NULL UNIQUE,
+  name text NOT NULL CHECK (length(name) BETWEEN 1 AND 200),
+  category text NOT NULL,
+  page_size text,
+  paper_name text,
+  description text,
+  format_enc bytea NOT NULL CHECK (octet_length(format_enc) <= 8388608),
+  assets jsonb NOT NULL DEFAULT '[]',
+  assets_count integer NOT NULL DEFAULT 0,
+  elements_count integer NOT NULL DEFAULT 0,
+  source_key_id text NOT NULL,
+  is_required boolean NOT NULL DEFAULT false,
+  is_active boolean NOT NULL DEFAULT true,
+  version integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS format_templates_catalog ON auric.format_templates (is_active, category, name);
+CREATE TABLE IF NOT EXISTS auric.format_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  source_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO auric.format_settings (singleton) VALUES (true) ON CONFLICT DO NOTHING;
+GRANT SELECT, INSERT, UPDATE, DELETE ON auric.format_templates, auric.format_settings TO auric_app;
+`,
+} as const;
+
+export const auricServerCoveStorageSchema = {
+  id: '015_auric_server_cove_storage',
+  sql: `
+-- Dedicated disabled system service account for Auric Server files in Cove
+INSERT INTO auth.users (email, password_hash, role_id, disabled_at, first_name, last_name, username)
+VALUES (
+  'auric_server@system.auric.internal',
+  '!disabled-system-service-account!',
+  1,
+  now(),
+  'Auric',
+  'Server',
+  'auric_server'
+)
+ON CONFLICT (username) DO NOTHING;
+
+INSERT INTO auric.shop_profiles (user_id, shop_name, shop_location, gstin)
+SELECT id, 'Auric Server Storage', 'System', NULL
+FROM auth.users
+WHERE lower(COALESCE(username, '')) = 'auric_server'
+ON CONFLICT (user_id) DO NOTHING;
+
+ALTER TABLE auric.format_templates
+  ADD COLUMN IF NOT EXISTS storage_backend text NOT NULL DEFAULT 'cove' CHECK (storage_backend IN ('cove', 'postgres')),
+  ADD COLUMN IF NOT EXISTS cove_folder_id uuid,
+  ADD COLUMN IF NOT EXISTS format_cove_file_id uuid,
+  ALTER COLUMN format_enc DROP NOT NULL;
+
+UPDATE auric.format_templates
+SET storage_backend = 'postgres'
+WHERE format_cove_file_id IS NULL AND format_enc IS NOT NULL;
+`,
+} as const;
+
 export const AURIC_MIGRATIONS = [
   auricSchema,
   auricEntitlementsSchema,
@@ -707,5 +775,7 @@ export const AURIC_MIGRATIONS = [
   auricSupportSchema,
   auricControlCenterGrantsSchema,
   auricDevicePublicKeySchema,
+  auricFormatTemplatesSchema,
+  auricServerCoveStorageSchema,
 ];
 

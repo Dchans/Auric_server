@@ -11,6 +11,7 @@ import { SecurityModule } from './security/security.module';
 import { VersionsModule } from './versions/versions.module';
 import { ControlController } from './control';
 import {SupportModule} from './support/support.module';
+import { FormatsModule } from './formats/formats.module';
 
 export { AuthAccount } from './common/types/auth-account.type';
 export { Database, DatabaseService } from './database/database.service';
@@ -27,6 +28,7 @@ export { AuthGuard } from './security/auth.guard';
     CredentialsModule,
     DevicesModule,
     SupportModule,
+    FormatsModule,
   ],
   controllers: [AppController, ElectronAuthController, RemoteAuthController, ControlController],
 })

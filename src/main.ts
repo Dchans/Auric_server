@@ -19,6 +19,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule,{bodyParser:false});
   app.getHttpAdapter().getInstance().set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY));
   app.use('/api/support',json({limit:'8mb'}));
+  app.use('/admin/formats',json({limit:'25mb'}));
   app.use(json({limit:'256kb'}));
   app.enableShutdownHooks();
   app.useGlobalInterceptors(new AdminAudit(app.get(DatabaseService), 'auric'));

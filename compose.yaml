@@ -12,6 +12,8 @@ services:
       PGPASSWORD: "${AURIC_PG_PASSWORD:?Set the auric_app password in .env}"
       AURIC_CREDENTIALS_MASTER_KEY: "${AURIC_CREDENTIALS_MASTER_KEY:-6gLUllbLXb8mrblOZHssbWYihZdTHt_TBT5TB84ozM8=}"
       AUTH_API_URL: "${AUTH_API_URL:-http://local-api-auth-1:3000}"
+      COVE_API_URL: "${COVE_API_URL:-http://cove-cove-1:3000}"
+      COVE_SERVICE_KEY: "${COVE_SERVICE_KEY:-auric-cove-internal-service-v1}"
     networks:
       - default
       - auth-db
